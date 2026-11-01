@@ -7,10 +7,8 @@ import {
   Box,
   Alert,
   Stack,
-  ThemeIcon,
-  Group,
 } from "@mantine/core";
-import { IconAlertCircle, IconShieldLock } from "@tabler/icons-react";
+import { IconAlertCircle } from "@tabler/icons-react";
 import { useRedirectIfAuthenticated } from "@/features/auth/hooks/use-redirect-if-authenticated.ts";
 import { useWorkspacePublicDataQuery } from "@/features/workspace/queries/workspace-query.ts";
 import { Error404 } from "@/components/ui/error-404.tsx";
@@ -98,21 +96,6 @@ export function LoginForm() {
     <AuthLayout>
       <Container size={440} className={classes.container}>
         <Box p="xl" className={classes.containerBox}>
-          <Group justify="center" mb="sm">
-            <ThemeIcon
-              size={48}
-              radius="xl"
-              variant="light"
-              color="green"
-              style={{
-                backgroundColor: "rgba(33, 192, 15, 0.12)",
-                border: "1px solid rgba(33, 192, 15, 0.25)",
-              }}
-            >
-              <IconShieldLock size={26} color="#21C00F" />
-            </ThemeIcon>
-          </Group>
-
           <Title order={1} size="h3" ta="center" fw={600} mb={6}>
             {workspace?.name ? workspace.name : t("Welcome to Docmost")}
           </Title>
