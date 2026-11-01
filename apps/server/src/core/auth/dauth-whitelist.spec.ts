@@ -147,4 +147,26 @@ describe('isUserAllowed (DAuth Whitelist)', () => {
     expect(isUserAllowed('student@nitt.edu', '106121088')).toBe(true);
     expect(isUserAllowed('charlie@nitt.edu')).toBe(false);
   });
+
+  it('auto-enforces allowlist when members.json file is found without env flags', () => {
+    delete process.env.DAUTH_ENFORCE_ALLOWLIST;
+    const membersPath = path.join(tempDir, 'members.json');
+    fs.writeFileSync(
+      membersPath,
+      JSON.stringify({
+        members: ['102123080', '110123087@nitt.edu'],
+      }),
+    );
+
+    // Passed filePath simulates finding members.json
+    expect(
+      isUserAllowed('102123080@nitt.edu', '102123080', false, undefined, undefined, membersPath),
+    ).toBe(true);
+    expect(
+      isUserAllowed('110123087@nitt.edu', '110123087', false, undefined, undefined, membersPath),
+    ).toBe(true);
+    expect(
+      isUserAllowed('outsider@nitt.edu', '105121000', false, undefined, undefined, membersPath),
+    ).toBe(false);
+  });
 });

@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import { isBetaPublicSpaces, isCloud } from "@/lib/config.ts";
 import ManageHostname from "@/ee/components/manage-hostname.tsx";
 import { Divider } from "@mantine/core";
-import AllowMemberTemplates from "@/ee/security/components/allow-member-templates.tsx";
 import WorkspaceDefaultPageEditMode from "@/features/workspace/components/settings/components/workspace-default-page-edit-mode.tsx";
 import PersonalSpacesSetting from "@/ee/personal-space/components/personal-spaces-setting.tsx";
 import AllowPublicSpaces from "@/features/workspace/components/settings/components/allow-public-spaces.tsx";
@@ -19,9 +18,6 @@ export default function WorkspaceSettings() {
       <SettingsTitle title={t("General")} />
       <WorkspaceIcon />
       <WorkspaceNameForm />
-
-      <Divider my="md" />
-      <AllowMemberTemplates />
 
       <Divider my="md" />
       <PersonalSpacesSetting />

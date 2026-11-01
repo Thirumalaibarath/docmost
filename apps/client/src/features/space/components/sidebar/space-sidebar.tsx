@@ -330,26 +330,7 @@ function SpaceMenu({
             {isWatching ? t("Stop watching space") : t("Watch space")}
           </Menu.Item>
 
-          {canManagePages && (
-            <>
-              <Menu.Divider />
-              <Tooltip
-                label={upgradeLabel}
-                disabled={hasTemplates}
-                position="right"
-                withArrow
-              >
-                <Menu.Item
-                  onClick={hasTemplates ? openTemplatePicker : undefined}
-                  leftSection={<IconTemplate size={16} />}
-                  data-disabled={!hasTemplates || undefined}
-                  aria-disabled={!hasTemplates || undefined}
-                >
-                  {t("Templates")}
-                </Menu.Item>
-              </Tooltip>
-            </>
-          )}
+
 
           {canManagePages && (
             <>

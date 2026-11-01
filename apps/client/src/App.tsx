@@ -179,10 +179,10 @@ export default function App() {
           <Route path={"/spaces"} element={<SpacesPage />} />
           <Route path={"/favorites"} element={<FavoritesPage />} />
           <Route path={"/labels/:labelName"} element={<LabelPage />} />
-          <Route path={"/templates"} element={<TemplateList />} />
+          <Route path={"/templates"} element={<Navigate to="/home" replace />} />
           <Route
             path={"/templates/:templateId"}
-            element={<TemplateEditor />}
+            element={<Navigate to="/home" replace />}
           />
           <Route path={"/s/:spaceSlug"} element={<SpaceHome />} />
           <Route path={"/s/:spaceSlug/trash"} element={<SpaceTrash />} />
@@ -199,29 +199,47 @@ export default function App() {
               path={"account/preferences"}
               element={<AccountPreferences />}
             />
-            <Route path={"account/api-keys"} element={<UserApiKeys />} />
+            <Route
+              path={"account/api-keys"}
+              element={<Navigate to="/settings/account/profile" replace />}
+            />
             <Route
               path={"account/api-keys/authorized-apps"}
-              element={<UserApiKeys />}
+              element={<Navigate to="/settings/account/profile" replace />}
             />
             <Route path={"account/connections"} element={<Connections />} />
             <Route path={"workspace"} element={<WorkspaceSettings />} />
             <Route path={"members"} element={<WorkspaceMembers />} />
-            <Route path={"api-keys"} element={<WorkspaceApiKeys />} />
+            <Route
+              path={"api-keys"}
+              element={<Navigate to="/settings/workspace" replace />}
+            />
             <Route path={"groups"} element={<Groups />} />
             <Route path={"groups/:groupId"} element={<GroupInfo />} />
             <Route path={"spaces"} element={<Spaces />} />
             <Route path={"sharing"} element={<Shares />} />
-            <Route path={"security"} element={<Security />} />
+            <Route
+              path={"security"}
+              element={<Navigate to="/settings/workspace" replace />}
+            />
             <Route path={"ai"} element={<AiSettings />} />
             <Route path={"ai/mcp"} element={<AiSettings />} />
-            <Route path={"audit"} element={<AuditLogs />} />
-            <Route path={"audit/siem"} element={<AuditLogs />} />
+            <Route
+              path={"audit"}
+              element={<Navigate to="/settings/workspace" replace />}
+            />
+            <Route
+              path={"audit/siem"}
+              element={<Navigate to="/settings/workspace" replace />}
+            />
             <Route
               path={"siem"}
-              element={<Navigate to="/settings/audit/siem" replace />}
+              element={<Navigate to="/settings/workspace" replace />}
             />
-            <Route path={"verifications"} element={<VerifiedPages />} />
+            <Route
+              path={"verifications"}
+              element={<Navigate to="/settings/workspace" replace />}
+            />
             <Route path={"integrations"} element={<Integrations />} />
             {!isCloud() && <Route path={"license"} element={<License />} />}
             {isCloud() && <Route path={"billing"} element={<Billing />} />}

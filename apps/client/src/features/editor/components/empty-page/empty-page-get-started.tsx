@@ -114,18 +114,6 @@ export function EmptyPageGetStarted({
           },
         ]
       : []),
-    ...(hasTemplates
-      ? [
-          {
-            key: "template",
-            label: t("Template"),
-            icon: IconTemplate,
-            color: "pink",
-            onClick: openTemplatePicker,
-            disabled: false,
-          },
-        ]
-      : []),
   ];
 
   const showChips =
