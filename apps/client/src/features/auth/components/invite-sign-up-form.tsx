@@ -1,123 +1,67 @@
 import * as React from "react";
-import { z } from "zod/v4";
-
-import { useForm } from "@mantine/form";
-import {
-  Container,
-  Title,
-  TextInput,
-  Button,
-  PasswordInput,
-  Box,
-  Stack,
-} from "@mantine/core";
-import { zod4Resolver } from "mantine-form-zod-resolver";
-import { useParams, useSearchParams } from "react-router-dom";
-import useAuth from "@/features/auth/hooks/use-auth";
+import { Container, Title, Box, Stack, Text, Badge, Group } from "@mantine/core";
+import { useParams } from "react-router-dom";
 import classes from "@/features/auth/components/auth.module.css";
 import { useGetInvitationQuery } from "@/features/workspace/queries/workspace-query.ts";
 import { useRedirectIfAuthenticated } from "@/features/auth/hooks/use-redirect-if-authenticated.ts";
 import { useTranslation } from "react-i18next";
-import SsoLogin from "@/ee/components/sso-login.tsx";
 import { AuthLayout } from "./auth-layout.tsx";
-
-const formSchema = z.object({
-  name: z.string().trim().min(1),
-  password: z.string().min(8),
-});
-
-type FormValues = z.infer<typeof formSchema>;
+import { DAuthLoginButton } from "./dauth-button.tsx";
 
 export function InviteSignUpForm() {
   const { t } = useTranslation();
   const params = useParams();
-  const [searchParams] = useSearchParams();
 
   const { data: invitation, isError } = useGetInvitationQuery(
     params?.invitationId,
   );
-  const { invitationSignup, isLoading } = useAuth();
   useRedirectIfAuthenticated();
 
-  const form = useForm<FormValues>({
-    validate: zod4Resolver(formSchema),
-    initialValues: {
-      name: "",
-      password: "",
-    },
-  });
-
-  async function onSubmit(data: FormValues) {
-    const invitationToken = searchParams.get("token");
-
-    await invitationSignup({
-      invitationId: invitation.id,
-      name: data.name,
-      password: data.password,
-      token: invitationToken,
-    });
-  }
-
   if (isError) {
-    return <div>{t("This invitation link is invalid or has expired.")}</div>;
+    return (
+      <AuthLayout>
+        <Container size={420} className={classes.container}>
+          <Box p="xl" className={classes.containerBox}>
+            <Text c="red" ta="center">
+              {t("This invitation link is invalid or has expired.")}
+            </Text>
+          </Box>
+        </Container>
+      </AuthLayout>
+    );
   }
 
   if (!invitation) {
-    return <div></div>;
+    return null;
   }
 
   return (
     <AuthLayout>
-    <Container size={420} className={classes.container}>
-      <Box p="xl" className={classes.containerBox}>
-        <Title order={2} ta="center" fw={500} mb="md">
-          {t("Join the workspace")}
-        </Title>
+      <Container size={420} className={classes.container}>
+        <Box p="xl" className={classes.containerBox}>
+          <Title order={2} ta="center" fw={600} mb="xs">
+            {t("Join the workspace")}
+          </Title>
 
-        <SsoLogin />
+          <Text size="sm" c="dimmed" ta="center" mb="lg">
+            {t("You have been invited to join this workspace")}
+          </Text>
 
-        {!invitation.enforceSso && (
-          <Stack align="stretch" justify="center" gap="xl">
-            <form onSubmit={form.onSubmit(onSubmit)}>
-              <TextInput
-                id="name"
-                type="text"
-                label={t("Name")}
-                placeholder={t("enter your full name")}
-                variant="filled"
-                {...form.getInputProps("name")}
-              />
+          <Group justify="center" mb="xl">
+            <Badge size="lg" variant="light" color="blue">
+              {invitation.email}
+            </Badge>
+          </Group>
 
-              <TextInput
-                id="email"
-                type="email"
-                label={t("Email")}
-                value={invitation.email}
-                disabled
-                variant="filled"
-                mt="md"
-              />
+          <Stack align="stretch" justify="center" gap="md">
+            <DAuthLoginButton size="lg" label={t("Sign in with DAuth to Join")} />
 
-              <PasswordInput
-                label={t("Password")}
-                placeholder={t("Your password")}
-                variant="filled"
-                mt="md"
-                visibilityToggleButtonProps={{
-                  "aria-label": t("Toggle password visibility"),
-                  "aria-hidden": false,
-                  tabIndex: 0,
-                }}
-                {...form.getInputProps("password")}
-              />
-              <Button type="submit" fullWidth mt="xl" loading={isLoading}>
-                {t("Sign Up")}
-              </Button>
-            </form>
+            <Text size="xs" c="dimmed" ta="center">
+              {t("Authenticate with your Delta DAuth account to complete registration")}
+            </Text>
           </Stack>
-        )}
-      </Box>
-    </Container>
+        </Box>
+      </Container>
     </AuthLayout>
   );
 }

@@ -94,6 +94,15 @@ const Connections = lazyWithPrefetch(
   () => import("@/features/integration/pages/connections.tsx"),
 );
 
+function DAuthCallbackRedirect() {
+  useEffect(() => {
+    window.location.replace(
+      `/api/auth/dauth/callback${window.location.search}`,
+    );
+  }, []);
+  return null;
+}
+
 export default function App() {
   const { t } = useTranslation();
   useRedirectToCloudSelect();
@@ -114,8 +123,12 @@ export default function App() {
         <Route index element={<Navigate to="/home" />} />
         <Route path={"/login"} element={<LoginPage />} />
         <Route path={"/invites/:invitationId"} element={<InviteSignup />} />
-        <Route path={"/forgot-password"} element={<ForgotPassword />} />
-        <Route path={"/password-reset"} element={<PasswordReset />} />
+        <Route path={"/forgot-password"} element={<Navigate to="/login" replace />} />
+        <Route path={"/password-reset"} element={<Navigate to="/login" replace />} />
+        <Route
+          path={"/auth/dauth/callback"}
+          element={<DAuthCallbackRedirect />}
+        />
         <Route path={"/login/mfa"} element={<MfaChallengePage />} />
         <Route path={"/login/mfa/setup"} element={<MfaSetupRequiredPage />} />
         <Route path={"/oauth/consent"} element={<OAuthConsent />} />

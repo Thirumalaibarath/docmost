@@ -1,68 +1,93 @@
-import { z } from "zod/v4";
-import { useForm } from "@mantine/form";
-import { zod4Resolver } from "mantine-form-zod-resolver";
-import useAuth from "@/features/auth/hooks/use-auth";
+import React, { useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Container,
   Title,
-  TextInput,
-  Button,
-  PasswordInput,
+  Text,
   Box,
-  Anchor,
+  Alert,
+  Stack,
+  ThemeIcon,
   Group,
 } from "@mantine/core";
-import classes from "./auth.module.css";
+import { IconAlertCircle, IconShieldLock } from "@tabler/icons-react";
 import { useRedirectIfAuthenticated } from "@/features/auth/hooks/use-redirect-if-authenticated.ts";
-import { Link } from "react-router-dom";
-import APP_ROUTE from "@/lib/app-route.ts";
-import { useTranslation } from "react-i18next";
-import SsoLogin from "@/ee/components/sso-login.tsx";
 import { useWorkspacePublicDataQuery } from "@/features/workspace/queries/workspace-query.ts";
 import { Error404 } from "@/components/ui/error-404.tsx";
-import React from "react";
 import { AuthLayout } from "./auth-layout.tsx";
-
-const formSchema = z.object({
-  email: z
-    .email()
-    .min(1, { message: "email is required" }),
-  password: z.string().min(1, { message: "Password is required" }),
-});
-type FormValues = z.infer<typeof formSchema>;
+import { DAuthLoginButton } from "./dauth-button.tsx";
+import classes from "./auth.module.css";
 
 export function LoginForm() {
   const { t } = useTranslation();
-  const { signIn, isLoading } = useAuth();
   useRedirectIfAuthenticated();
   const {
-    data,
+    data: workspace,
     isLoading: isDataLoading,
     isError,
     error,
   } = useWorkspacePublicDataQuery();
 
-  const form = useForm<FormValues>({
-    validate: zod4Resolver(formSchema),
-    initialValues: {
-      email: "",
-      password: "",
-    },
-  });
+  const searchParams = useMemo(
+    () => new URLSearchParams(window.location.search),
+    [],
+  );
 
-  async function onSubmit(data: FormValues) {
-    await signIn(data);
-  }
+  const errorCode = searchParams.get("error");
+  const errorMsg = searchParams.get("message");
+  const userEmail = searchParams.get("email");
 
-  function handleValidationFailure(errors: Record<string, unknown>) {
-    const firstInvalidId = Object.keys(errors)[0];
-    if (firstInvalidId) {
-      document.getElementById(firstInvalidId)?.focus();
+  const errorDetails = useMemo(() => {
+    if (!errorCode) return null;
+
+    if (errorCode === "NOT_WHITELISTED") {
+      return {
+        title: t("Access Denied"),
+        color: "red",
+        message: userEmail
+          ? t(
+              "Your account ({{email}}) is not authorized to access this workspace. Please contact an administrator to be added to the whitelist.",
+              { email: userEmail },
+            )
+          : t(
+              "Your account is not authorized to access this workspace. Please contact an administrator to be added to the whitelist.",
+            ),
+      };
     }
-  }
+
+    if (errorCode === "DAUTH_CONFIG_ERROR") {
+      return {
+        title: t("Configuration Error"),
+        color: "yellow",
+        message:
+          errorMsg ||
+          t(
+            "DAuth is not properly configured. Please check environment settings.",
+          ),
+      };
+    }
+
+    if (errorCode === "INVALID_STATE") {
+      return {
+        title: t("Session Expired"),
+        color: "orange",
+        message: t(
+          "Your authentication session was invalid or expired. Please click below to sign in again.",
+        ),
+      };
+    }
+
+    return {
+      title: t("Authentication Failed"),
+      color: "red",
+      message:
+        errorMsg ||
+        t("An unexpected error occurred during sign-in. Please try again."),
+    };
+  }, [errorCode, errorMsg, userEmail, t]);
 
   if (isDataLoading) {
-   return null;
+    return null;
   }
 
   if (isError && error?.["response"]?.status === 404) {
@@ -71,61 +96,55 @@ export function LoginForm() {
 
   return (
     <AuthLayout>
-      <Container size={420} className={classes.container}>
+      <Container size={440} className={classes.container}>
         <Box p="xl" className={classes.containerBox}>
-          <Title order={1} size="h2" ta="center" fw={500} mb="md">
-            {t("Login")}
+          <Group justify="center" mb="sm">
+            <ThemeIcon
+              size={48}
+              radius="xl"
+              variant="light"
+              color="green"
+              style={{
+                backgroundColor: "rgba(33, 192, 15, 0.12)",
+                border: "1px solid rgba(33, 192, 15, 0.25)",
+              }}
+            >
+              <IconShieldLock size={26} color="#21C00F" />
+            </ThemeIcon>
+          </Group>
+
+          <Title order={1} size="h3" ta="center" fw={600} mb={6}>
+            {workspace?.name ? workspace.name : t("Welcome to Docmost")}
           </Title>
 
-          <SsoLogin />
+          <Text c="dimmed" size="sm" ta="center" mb="lg">
+            {t("Sign in with your Delta DAuth account to continue")}
+          </Text>
 
-          {!data?.enforceSso && (
-            <>
-              <form onSubmit={form.onSubmit(onSubmit, handleValidationFailure)}>
-                <TextInput
-                  id="email"
-                  type="email"
-                  label={t("Email")}
-                  placeholder="email@example.com"
-                  variant="filled"
-                  autoComplete="email"
-                  errorProps={{ role: "alert" }}
-                  {...form.getInputProps("email")}
-                />
-
-                <PasswordInput
-                  id="password"
-                  label={t("Password")}
-                  placeholder={t("Your password")}
-                  variant="filled"
-                  mt="md"
-                  autoComplete="current-password"
-                  errorProps={{ role: "alert" }}
-                  visibilityToggleButtonProps={{
-                    "aria-label": t("Toggle password visibility"),
-                    "aria-hidden": false,
-                    tabIndex: 0,
-                  }}
-                  {...form.getInputProps("password")}
-                />
-
-                <Group justify="flex-end" mt="sm">
-                  <Anchor
-                    to={APP_ROUTE.AUTH.FORGOT_PASSWORD}
-                    component={Link}
-                    underline="never"
-                    size="sm"
-                  >
-                    {t("Forgot your password?")}
-                  </Anchor>
-                </Group>
-
-                <Button type="submit" fullWidth mt="md" loading={isLoading}>
-                  {t("Sign In")}
-                </Button>
-              </form>
-            </>
+          {errorDetails && (
+            <Alert
+              icon={<IconAlertCircle size={18} />}
+              title={errorDetails.title}
+              color={errorDetails.color}
+              variant="light"
+              mb="lg"
+              radius="md"
+            >
+              {errorDetails.message}
+            </Alert>
           )}
+
+          <Stack gap="md" mt="md">
+            <DAuthLoginButton
+              size="lg"
+              label={t("Sign in with DAuth")}
+              fullWidth
+            />
+
+            <Text size="xs" c="dimmed" ta="center" mt="xs">
+              {t("Single sign-on powered by Delta DAuth")}
+            </Text>
+          </Stack>
         </Box>
       </Container>
     </AuthLayout>

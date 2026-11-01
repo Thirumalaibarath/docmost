@@ -15,4 +15,4 @@ export { SlackIcon } from "./slack-icon.tsx";
 export { FramerIcon } from "./framer-icon.tsx";
 export { LoomIcon } from "./loom-icon.tsx";
 export { YoutubeIcon } from "./youtube-icon.tsx";
-
+export { DeltaTriangleIcon } from "./delta-triangle-icon.tsx";

@@ -400,4 +400,48 @@ export class EnvironmentService {
   getAllowedPrivateNetworks(): string {
     return this.configService.get<string>('ALLOWED_PRIVATE_NETWORKS', 'none');
   }
+
+  getDAuthHost(): string {
+    const host = this.configService.get<string>(
+      'DAUTH_HOST',
+      'https://auth.delta.nitt.edu',
+    );
+    return (host || 'https://auth.delta.nitt.edu').replace(/\/$/, '');
+  }
+
+  getDAuthClientId(): string {
+    return this.configService.get<string>('DAUTH_CLIENT_ID', '');
+  }
+
+  getDAuthClientSecret(): string {
+    return this.configService.get<string>('DAUTH_CLIENT_SECRET', '');
+  }
+
+  getDAuthRedirectUri(): string {
+    const configured = this.configService.get<string>('DAUTH_REDIRECT_URI');
+    if (configured) {
+      return configured;
+    }
+    return `${this.getAppUrl()}/api/auth/dauth/callback`;
+  }
+
+  getDAuthEnforceAllowlist(): boolean {
+    const enforce = (
+      this.configService.get<string>('DAUTH_ENFORCE_ALLOWLIST', '0') || '0'
+    )
+      .trim()
+      .toLowerCase();
+    return enforce === '1' || enforce === 'true';
+  }
+
+  getDAuthAllowedUsers(): string {
+    return this.configService.get<string>('DAUTH_ALLOWED_USERS', '');
+  }
+
+  getDAuthAllowedUsersFile(): string {
+    return this.configService.get<string>(
+      'DAUTH_ALLOWED_USERS_FILE',
+      process.env.DAUTH_ALLOWED_USERS_FILE || '',
+    );
+  }
 }

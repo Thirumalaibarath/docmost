@@ -44,6 +44,14 @@ import {
 import { EnvironmentService } from '../../../integrations/environment/environment.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventName } from '../../../common/events/event.contants';
+import { WorkspaceRepo } from '@docmost/db/repos/workspace/workspace.repo';
+import { WorkspaceService } from '../../workspace/services/workspace.service';
+import { GroupUserRepo } from '@docmost/db/repos/group/group-user.repo';
+import { UserRole } from '../../../common/helpers/types/permission';
+import { getWorkspaceDefaultPageEditMode } from '../../workspace/workspace.util';
+import { isUserAllowed } from '../dauth-whitelist';
+import { DAuthUserProfile } from './dauth.service';
+import * as crypto from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -63,59 +71,168 @@ export class AuthService {
     @InjectKysely() private readonly db: KyselyDB,
     @Inject(AUDIT_SERVICE) private readonly auditService: IAuditService,
     private wsService: WsService,
+    private workspaceRepo: WorkspaceRepo,
+    private workspaceService: WorkspaceService,
+    private groupUserRepo: GroupUserRepo,
   ) {}
 
-  async login(loginDto: LoginDto, workspaceId: string) {
-    const user = await this.userRepo.findByEmail(loginDto.email, workspaceId, {
-      includePassword: true,
-    });
-
-    const errorMessage = 'Email or password does not match';
-    if (!user || isUserDisabled(user)) {
-      throw new UnauthorizedException(errorMessage);
+  async handleDAuthLogin(profile: DAuthUserProfile): Promise<
+    | { allowed: false; email: string }
+    | { allowed: true; authToken: string; user: User; workspace: Workspace }
+  > {
+    const email = profile.email?.trim().toLowerCase();
+    if (!email) {
+      throw new BadRequestException('Email was not provided by DAuth');
     }
 
-    const isPasswordMatch = await comparePasswordHash(
-      loginDto.password,
-      user.password,
+    let workspace = await this.workspaceRepo.findFirst();
+    const existingUser = workspace
+      ? await this.userRepo.findByEmail(email, workspace.id)
+      : null;
+
+    // Safety Admin Bypass: instance administrators or superusers are never locked out
+    const isAdmin = existingUser
+      ? existingUser.role === UserRole.OWNER ||
+        existingUser.role === UserRole.ADMIN
+      : !workspace;
+
+    const rollNumber = profile.rollNumber || '';
+    const isAllowed = isUserAllowed(
+      email,
+      rollNumber,
+      isAdmin,
+      this.environmentService.getDAuthEnforceAllowlist(),
+      this.environmentService.getDAuthAllowedUsers(),
+      this.environmentService.getDAuthAllowedUsersFile(),
     );
 
-    if (!isPasswordMatch) {
-      throw new UnauthorizedException(errorMessage);
+    if (!isAllowed) {
+      this.logger.warn(`User ${email} is not in the DAuth allowlist`);
+      return { allowed: false, email };
     }
 
-    throwIfEmailNotVerified({
-      isCloud: this.environmentService.isCloud(),
-      emailVerifiedAt: user.emailVerifiedAt,
-      email: user.email,
-      workspaceId,
-      appSecret: this.environmentService.getAppSecret(),
-    });
+    let user: User;
 
-    user.lastLoginAt = new Date();
-    await this.userRepo.updateLastLogin(user.id, workspaceId);
+    if (!workspace) {
+      // First-time setup: automatically initialize workspace with this user as OWNER
+      const { workspace: newWorkspace, user: newUser } =
+        await this.signupService.initialSetup({
+          workspaceName: 'Docmost',
+          name: profile.name || email.split('@')[0],
+          email,
+          password: crypto.randomBytes(32).toString('hex'),
+        });
+      workspace = newWorkspace;
+      user = newUser;
+
+      if (profile.avatar) {
+        await this.userRepo.updateUser(
+          { avatarUrl: profile.avatar },
+          user.id,
+          workspace.id,
+        );
+        user.avatarUrl = profile.avatar;
+      }
+    } else {
+      if (existingUser) {
+        user = existingUser;
+        if (isUserDisabled(user)) {
+          throw new UnauthorizedException('Your account has been deactivated.');
+        }
+
+        user.lastLoginAt = new Date();
+        await this.userRepo.updateLastLogin(user.id, workspace.id);
+
+        if (!user.avatarUrl && profile.avatar) {
+          await this.userRepo.updateUser(
+            { avatarUrl: profile.avatar },
+            user.id,
+            workspace.id,
+          );
+          user.avatarUrl = profile.avatar;
+        }
+      } else {
+        // Register new user in existing workspace
+        const ownerCount = await this.userRepo.roleCountByWorkspaceId(
+          UserRole.OWNER,
+          workspace.id,
+        );
+        const role = ownerCount === 0 ? UserRole.OWNER : UserRole.MEMBER;
+
+        user = await executeTx(this.db, async (trx) => {
+          const newUser = await this.userRepo.insertUser(
+            {
+              name: profile.name || email.split('@')[0],
+              email,
+              password: crypto.randomBytes(32).toString('hex'),
+              role,
+              avatarUrl: profile.avatar || null,
+              emailVerifiedAt: new Date(),
+              workspaceId: workspace.id,
+            },
+            trx,
+            { pageEditMode: getWorkspaceDefaultPageEditMode(workspace) },
+          );
+
+          await this.workspaceService.addUserToWorkspace(
+            newUser.id,
+            workspace.id,
+            undefined,
+            trx,
+          );
+
+          await this.groupUserRepo.addUserToDefaultGroup(
+            newUser.id,
+            workspace.id,
+            trx,
+          );
+
+          return newUser;
+        });
+
+        this.auditService.log({
+          event: AuditEvent.USER_CREATED,
+          resourceType: AuditResource.USER,
+          resourceId: user.id,
+          changes: {
+            after: {
+              name: user.name,
+              email: user.email,
+              role: user.role,
+            },
+          },
+          metadata: { source: 'dauth' },
+        });
+      }
+    }
 
     this.auditService.log({
       event: AuditEvent.USER_LOGIN,
       resourceType: AuditResource.USER,
       resourceId: user.id,
-      metadata: { source: 'password' },
+      metadata: { source: 'dauth' },
     });
 
-    return this.sessionService.createSessionAndToken(user);
+    const authToken = await this.sessionService.createSessionAndToken(user);
+    return { allowed: true, authToken, user, workspace };
+  }
+
+  async login(loginDto: LoginDto, workspaceId: string) {
+    throw new BadRequestException(
+      'Password login is disabled. Please sign in with DAuth.',
+    );
   }
 
   async register(createUserDto: CreateUserDto, workspaceId: string) {
-    const user = await this.signupService.signup(createUserDto, workspaceId);
-    return this.sessionService.createSessionAndToken(user);
+    throw new BadRequestException(
+      'Password registration is disabled. Please sign in with DAuth.',
+    );
   }
 
   async setup(createAdminUserDto: CreateAdminUserDto) {
-    const { workspace, user } =
-      await this.signupService.initialSetup(createAdminUserDto);
-
-    const authToken = await this.sessionService.createSessionAndToken(user);
-    return { workspace, authToken };
+    throw new BadRequestException(
+      'Password setup is disabled. Please sign in with DAuth.',
+    );
   }
 
   async changePassword(
@@ -124,208 +241,27 @@ export class AuthService {
     workspaceId: string,
     currentSessionId?: string,
   ): Promise<void> {
-    const user = await this.userRepo.findById(userId, workspaceId, {
-      includePassword: true,
-    });
-
-    if (!user || isUserDisabled(user)) {
-      throw new NotFoundException('User not found');
-    }
-
-    const comparePasswords = await comparePasswordHash(
-      dto.oldPassword,
-      user.password,
+    throw new BadRequestException(
+      'Password management is disabled. Authentication is managed via DAuth.',
     );
-
-    if (!comparePasswords) {
-      throw new BadRequestException('Current password is incorrect');
-    }
-
-    const newPasswordHash = await hashPassword(dto.newPassword);
-    await this.userRepo.updateUser(
-      {
-        password: newPasswordHash,
-        hasGeneratedPassword: false,
-      },
-      userId,
-      workspaceId,
-    );
-
-    if (currentSessionId) {
-      await this.userSessionRepo.deleteAllExceptCurrent(
-        currentSessionId,
-        userId,
-        workspaceId,
-      );
-      this.wsService.disconnectOtherSessions(userId, currentSessionId);
-    } else {
-      await this.userSessionRepo.deleteByUserId(userId, workspaceId);
-      this.wsService.disconnectUser(userId);
-    }
-
-    this.auditService.log({
-      event: AuditEvent.USER_PASSWORD_CHANGED,
-      resourceType: AuditResource.USER,
-      resourceId: userId,
-    });
-
-    const emailTemplate = ChangePasswordEmail({ username: user.name });
-    await this.mailService.sendToQueue({
-      to: user.email,
-      subject: 'Your password has been changed',
-      template: emailTemplate,
-    });
   }
 
   async forgotPassword(
     forgotPasswordDto: ForgotPasswordDto,
     workspace: Workspace,
   ): Promise<void> {
-    const user = await this.userRepo.findByEmail(
-      forgotPasswordDto.email,
-      workspace.id,
+    throw new BadRequestException(
+      'Password management is disabled. Authentication is managed via DAuth.',
     );
-
-    if (!user || isUserDisabled(user)) {
-      return;
-    }
-
-    const token = nanoIdGen(16);
-
-    await executeTx(this.db, async (trx) => {
-      await trx
-        .deleteFrom('userTokens')
-        .where('userId', '=', user.id)
-        .where('type', '=', UserTokenType.FORGOT_PASSWORD)
-        .execute();
-
-      await this.userTokenRepo.insertUserToken(
-        {
-          token,
-          userId: user.id,
-          workspaceId: user.workspaceId,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000), // 30 minutes
-          type: UserTokenType.FORGOT_PASSWORD,
-        },
-        { trx },
-      );
-    });
-
-    const resetLink = `${this.domainService.getUrl(workspace.hostname)}/password-reset?token=${token}`;
-
-    const emailTemplate = ForgotPasswordEmail({
-      username: user.name,
-      resetLink: resetLink,
-    });
-
-    await this.mailService.sendToQueue({
-      to: user.email,
-      subject: 'Reset your password',
-      template: emailTemplate,
-    });
-
-    this.auditService.log({
-      event: AuditEvent.USER_PASSWORD_RESET_REQUESTED,
-      resourceType: AuditResource.USER,
-      resourceId: user.id,
-      metadata: { source: 'forgot_password' },
-    });
   }
 
   async passwordReset(
     passwordResetDto: PasswordResetDto,
     workspace: Workspace,
-  ) {
-    const userToken = await this.userTokenRepo.findById(
-      passwordResetDto.token,
-      workspace.id,
+  ): Promise<{ requiresLogin: boolean; authToken: string }> {
+    throw new BadRequestException(
+      'Password management is disabled. Authentication is managed via DAuth.',
     );
-
-    if (
-      !userToken ||
-      userToken.type !== UserTokenType.FORGOT_PASSWORD ||
-      userToken.expiresAt < new Date()
-    ) {
-      throw new BadRequestException('Invalid or expired token');
-    }
-
-    const user = await this.userRepo.findById(userToken.userId, workspace.id, {
-      includeUserMfa: true,
-    });
-    if (!user || isUserDisabled(user)) {
-      throw new NotFoundException('User not found');
-    }
-
-    const newPasswordHash = await hashPassword(passwordResetDto.newPassword);
-
-    await executeTx(this.db, async (trx) => {
-      await this.userRepo.updateUser(
-        {
-          password: newPasswordHash,
-          hasGeneratedPassword: false,
-        },
-        user.id,
-        workspace.id,
-        trx,
-      );
-
-      await trx
-        .deleteFrom('userTokens')
-        .where('userId', '=', user.id)
-        .where('type', '=', UserTokenType.FORGOT_PASSWORD)
-        .execute();
-    });
-
-    await this.userSessionRepo.deleteByUserId(user.id, workspace.id);
-    this.wsService.disconnectUser(user.id);
-
-    // A failed revocation must not block the reset itself; log loudly instead.
-    try {
-      await this.eventEmitter.emitAsync(EventName.USER_PASSWORD_RESET, {
-        userId: user.id,
-        workspaceId: workspace.id,
-      });
-    } catch (err) {
-      this.logger.error(
-        `failed to revoke oauth grants for user ${user.id} after password reset`,
-        err,
-      );
-    }
-
-    this.auditService.setActorId(user.id);
-    this.auditService.log({
-      event: AuditEvent.USER_PASSWORD_RESET,
-      resourceType: AuditResource.USER,
-      resourceId: user.id,
-    });
-
-    const emailTemplate = ChangePasswordEmail({ username: user.name });
-    await this.mailService.sendToQueue({
-      to: user.email,
-      subject: 'Your password has been changed',
-      template: emailTemplate,
-    });
-
-    if (this.environmentService.isCloud() && !user.emailVerifiedAt) {
-      await this.userRepo.updateUser(
-        { emailVerifiedAt: new Date() },
-        user.id,
-        workspace.id,
-      );
-    }
-
-    // Check if user has MFA enabled or workspace enforces MFA
-    const userHasMfa = user?.['mfa']?.isEnabled || false;
-    const workspaceEnforcesMfa = workspace.enforceMfa || false;
-
-    if (userHasMfa || workspaceEnforcesMfa) {
-      return {
-        requiresLogin: true,
-      };
-    }
-
-    const authToken = await this.sessionService.createSessionAndToken(user);
-    return { authToken };
   }
 
   async verifyUserToken(
