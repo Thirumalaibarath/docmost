@@ -87,6 +87,21 @@ docker push delta.nitt.edu/plane/plane-frontend:latest
 docker push delta.nitt.edu/plane-frontend:latest
 ```
 
+### Docmost Example:
+```bash
+# Automated via script:
+./push_to_delta.sh
+
+# Or manually:
+docker pull --platform linux/amd64 ghcr.io/thirumalaibarath/docmost:latest
+
+docker tag ghcr.io/thirumalaibarath/docmost:latest delta.nitt.edu/docmost:latest
+docker tag ghcr.io/thirumalaibarath/docmost:latest delta.nitt.edu/docmost/docmost:latest
+
+docker push delta.nitt.edu/docmost:latest
+docker push delta.nitt.edu/docmost/docmost:latest
+```
+
 ---
 
 ## 4. Workflow B: Building and Pushing from Local Source Code
