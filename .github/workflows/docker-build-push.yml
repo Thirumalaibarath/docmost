@@ -18,6 +18,7 @@ on:
       - main
       - master
       - delta
+      - dev
     tags:
       - "v*"
 
