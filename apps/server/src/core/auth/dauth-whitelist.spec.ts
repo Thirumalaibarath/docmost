@@ -169,4 +169,20 @@ describe('isUserAllowed (DAuth Whitelist)', () => {
       isUserAllowed('outsider@nitt.edu', '105121000', false, undefined, undefined, membersPath),
     ).toBe(false);
   });
+
+  it('handles members.json with trailing commas gracefully', () => {
+    delete process.env.DAUTH_ENFORCE_ALLOWLIST;
+    const membersPath = path.join(tempDir, 'members.json');
+    fs.writeFileSync(
+      membersPath,
+      '{\n  "members": [\n    "102123080",\n  ]\n}',
+    );
+
+    expect(
+      isUserAllowed('102123080@nitt.edu', '102123080', false, undefined, undefined, membersPath),
+    ).toBe(true);
+    expect(
+      isUserAllowed('outsider@nitt.edu', '105121000', false, undefined, undefined, membersPath),
+    ).toBe(false);
+  });
 });

@@ -425,12 +425,12 @@ export class EnvironmentService {
     return `${this.getAppUrl()}/api/auth/dauth/callback`;
   }
 
-  getDAuthEnforceAllowlist(): boolean {
-    const enforce = (
-      this.configService.get<string>('DAUTH_ENFORCE_ALLOWLIST', '0') || '0'
-    )
-      .trim()
-      .toLowerCase();
+  getDAuthEnforceAllowlist(): boolean | undefined {
+    const raw = this.configService.get<string>('DAUTH_ENFORCE_ALLOWLIST');
+    if (raw === undefined || raw === null || raw.trim() === '') {
+      return undefined;
+    }
+    const enforce = raw.trim().toLowerCase();
     return enforce === '1' || enforce === 'true';
   }
 

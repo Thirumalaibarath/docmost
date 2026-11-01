@@ -100,20 +100,51 @@ export function loadAllowedUsersSet(
   if (targetFilePath) {
     try {
       const fileContent = fs.readFileSync(targetFilePath, 'utf8');
-      const parsed = JSON.parse(fileContent);
-      const fileTokens = parseAllowedTokens(parsed);
+      let fileTokens: string[] = [];
+
+      try {
+        // Strip single & multi-line comments and trailing commas before JSON.parse
+        const sanitized = fileContent
+          .replace(/\/\*[\s\S]*?\*\/|([^:]|^)\/\/.*$/gm, '$1')
+          .replace(/,\s*([\]}])/g, '$1');
+        const parsed = JSON.parse(sanitized);
+        fileTokens = parseAllowedTokens(parsed);
+      } catch (parseErr) {
+        console.warn(
+          `[DAuth Whitelist] Standard JSON parse failed for ${targetFilePath} (${parseErr}). Attempting fallback token extraction...`,
+        );
+        // Fallback: extract emails, roll numbers (7-10 digits), or quoted strings
+        const regexTokens =
+          fileContent.match(
+            /[\w.+-]+@[\w.-]+\.[a-zA-Z]{2,}|\b\d{7,10}\b|"([^"]+)"|'([^']+)'/g,
+          ) || [];
+        for (const rawToken of regexTokens) {
+          const clean = rawToken.replace(/['"]/g, '').trim();
+          if (clean && !['members', 'users', 'allowedUsers'].includes(clean)) {
+            fileTokens.push(clean);
+          }
+        }
+      }
+
       for (const t of fileTokens) {
         const cleaned = t.trim().toLowerCase();
         if (cleaned) allowedSet.add(cleaned);
       }
       console.log(
-        `[DAuth Whitelist] Successfully loaded ${allowedSet.size} allowed token(s) from ${targetFilePath}`,
+        `[DAuth Whitelist] Successfully loaded ${allowedSet.size} allowed token(s) from ${targetFilePath}:`,
+        Array.from(allowedSet),
       );
-    } catch (err) {
-      console.error(
-        `[DAuth Whitelist] Failed to parse DAuth allowed users file from ${targetFilePath}:`,
-        err,
-      );
+    } catch (err: any) {
+      if (err.code === 'EACCES') {
+        console.error(
+          `[DAuth Whitelist] CRITICAL: Permission denied (EACCES) reading ${targetFilePath}! Container user 'node' (UID 1000) cannot read this file. Please run 'chmod 644 members.json' on the host server!`,
+        );
+      } else {
+        console.error(
+          `[DAuth Whitelist] Failed to read DAuth allowed users file from ${targetFilePath}:`,
+          err,
+        );
+      }
     }
   }
 
@@ -160,7 +191,11 @@ export function isUserAllowed(
     enforceAllowlist = Boolean(foundPath || hasEnvUsers);
   }
 
+  // Safety Admin Bypass: instance administrators or superusers are never locked out
   if (!enforceAllowlist || isAdmin) {
+    console.log(
+      `[DAuth Whitelist] Access granted without allowlist check (enforceAllowlist=${enforceAllowlist}, isAdmin=${isAdmin}) for ${email}`,
+    );
     return true;
   }
 
@@ -169,7 +204,7 @@ export function isUserAllowed(
   // If allowlist enforcement is active but 0 users were defined, reject for security
   if (allowedSet.size === 0) {
     console.warn(
-      '[DAuth Whitelist] Allowlist is enforced but no allowed users were found in members.json or environment.',
+      `[DAuth Whitelist] Allowlist is enforced but no allowed users were found in members.json or environment. Denying access to ${email}.`,
     );
     return false;
   }
@@ -186,9 +221,14 @@ export function isUserAllowed(
 
   const localEmail = userEmail.includes('@') ? userEmail.split('@')[0] : '';
 
-  return (
+  const matched =
     allowedSet.has(userEmail) ||
     (Boolean(userRoll) && allowedSet.has(userRoll)) ||
-    (Boolean(localEmail) && allowedSet.has(localEmail))
+    (Boolean(localEmail) && allowedSet.has(localEmail));
+
+  console.log(
+    `[DAuth Whitelist] Evaluated access for ${userEmail} (roll: ${userRoll}): ${matched ? 'ALLOWED' : 'DENIED'}`,
   );
+
+  return matched;
 }
